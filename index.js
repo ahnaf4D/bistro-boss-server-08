@@ -215,6 +215,18 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/admin-stats', async (req, res) => {
+      const customers = await userCollection.estimatedDocumentCount();
+      const products = await menuCollection.estimatedDocumentCount();
+      const orders = await paymentCollection.estimatedDocumentCount();
+      const payments = await paymentCollection.find().toArray();
+      const revenue = payments.reduce(
+        (total, payments) => total + payments.price,
+        0
+      );
+      res.send({ customers, products, orders, revenue });
+    });
+
     console.log(
       'Pinged your deployment. You successfully connected to MongoDB!'
     );
