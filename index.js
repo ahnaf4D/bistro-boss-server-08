@@ -215,18 +215,73 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/admin-stats', async (req, res) => {
+    app.get('/admin-stats', verifyTokens, verifyAdmin, async (req, res) => {
       const customers = await userCollection.estimatedDocumentCount();
       const products = await menuCollection.estimatedDocumentCount();
       const orders = await paymentCollection.estimatedDocumentCount();
-      const payments = await paymentCollection.find().toArray();
-      const revenue = payments.reduce(
-        (total, payments) => total + payments.price,
-        0
-      );
-      res.send({ customers, products, orders, revenue });
+      const result = await paymentCollection
+        .aggregate([
+          {
+            $group: {
+              _id: null,
+              totalRevenue: {
+                $sum: '$price',
+              },
+            },
+          },
+        ])
+        .toArray();
+      const totalDollars = result.length > 0 ? result[0].totalRevenue : 0;
+      // const totalDollars = totalCents / 1000;
+      res.send({ customers, products, orders, revenue: totalDollars });
     });
+    // order status => Non Efficient Way
+    /**
+     * Load all the payments
+     * For every menu menuIds (array)go find the item from collection
+     * for every item in the menu collection that you found from an entry
+     *
+     */
 
+    // using aggregate pipeline
+    app.get(`/order-stats`, verifyTokens, verifyAdmin, async (req, res) => {
+      const result = await paymentCollection
+        .aggregate([
+          {
+            $unwind: '$menuItemIds',
+          },
+          {
+            $lookup: {
+              from: 'menu',
+              localField: 'menuItemIds',
+              foreignField: '_id',
+              as: 'menuItems',
+            },
+          },
+          {
+            $unwind: '$menuItems',
+          },
+          {
+            $group: {
+              _id: '$menuItems.category',
+              quantity: {
+                $sum: 1,
+              },
+              revenue: { $sum: '$menuItems.price' },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              category: '$_id',
+              quantity: '$quantity',
+              revenue: '$revenue',
+            },
+          },
+        ])
+        .toArray();
+      res.send(result);
+    });
     console.log(
       'Pinged your deployment. You successfully connected to MongoDB!'
     );
